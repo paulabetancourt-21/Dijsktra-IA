@@ -1,8 +1,10 @@
 package co.edu.uptc.presentation;
 
 import co.edu.uptc.business.GraphService;
+import co.edu.uptc.model.DijkstraStep;
 import co.edu.uptc.model.Edge;
 import co.edu.uptc.model.Node;
+import co.edu.uptc.model.NodeState;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +24,10 @@ public class GraphCanvas extends Pane {
     private final Map<Node, NodeShape> nodeShapes = new LinkedHashMap<>();
     private final Map<Edge, EdgeShape> edgeShapes = new LinkedHashMap<>();
     private final Line previewLine = new Line();
+
+    private Node source;
+    private Node destination;
+    private Runnable onRefresh;
 
     public GraphCanvas(GraphService service) {
         this.service = service;
@@ -58,6 +64,24 @@ public class GraphCanvas extends Pane {
             getChildren().add(shape);
         }
         getChildren().add(previewLine);
+
+        // Si el origen o el destino ya no existen en el grafo, se olvidan.
+        if (source != null && !service.getGraph().containsNode(source)) {
+            source = null;
+        }
+        if (destination != null && !service.getGraph().containsNode(destination)) {
+            destination = null;
+        }
+        applyMarkers();
+
+        if (onRefresh != null) {
+            onRefresh.run();
+        }
+    }
+
+    /** Se ejecuta cada vez que el grafo se redibuja. */
+    public void setOnRefresh(Runnable onRefresh) {
+        this.onRefresh = onRefresh;
     }
 
     /** Reubica los dibujos existentes (se usa mientras se arrastra un nodo). */
@@ -69,6 +93,56 @@ public class GraphCanvas extends Pane {
             shape.update();
         }
     }
+
+    // ---------- Origen y destino ----------
+
+    public Node getSource() {
+        return source;
+    }
+
+    public void setSource(Node source) {
+        this.source = source;
+        applyMarkers();
+    }
+
+    public Node getDestination() {
+        return destination;
+    }
+
+    public void setDestination(Node destination) {
+        this.destination = destination;
+        applyMarkers();
+    }
+
+    private void applyMarkers() {
+        for (Map.Entry<Node, NodeShape> entry : nodeShapes.entrySet()) {
+            Node node = entry.getKey();
+            entry.getValue().setRole(node == source, node == destination);
+        }
+    }
+
+    // ---------- Ejecución del algoritmo ----------
+
+    /** Pinta colores y distancias según un paso del algoritmo. */
+    public void applyStep(DijkstraStep step) {
+        for (Map.Entry<Node, NodeShape> entry : nodeShapes.entrySet()) {
+            Node node = entry.getKey();
+            NodeShape shape = entry.getValue();
+            NodeState state = step.getStates().get(node);
+            shape.setState(state == null ? NodeState.UNVISITED : state);
+            Integer distance = step.getDistances().get(node);
+            shape.setDistance(distance == null ? "\u221E" : DistanceFormat.of(distance));
+        }
+    }
+
+    /** Quita colores y distancias de la ejecución; conserva nodos, aristas, origen y destino. */
+    public void clearExecution() {
+        for (NodeShape shape : nodeShapes.values()) {
+            shape.clearExecution();
+        }
+    }
+
+    // ---------- Búsqueda de elementos bajo el mouse ----------
 
     /** Nodo que está bajo el punto (x, y); null si no hay ninguno. */
     public Node nodeAt(double x, double y) {

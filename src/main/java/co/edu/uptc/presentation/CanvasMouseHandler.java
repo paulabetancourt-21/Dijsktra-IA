@@ -10,6 +10,8 @@ import co.edu.uptc.model.Node;
 import co.edu.uptc.model.SelfLoopException;
 
 import java.util.Optional;
+import java.util.function.Consumer;
+import javafx.scene.Cursor;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 
@@ -19,6 +21,9 @@ public class CanvasMouseHandler {
     private final GraphCanvas canvas;
     private final GraphService service;
     private EditMode mode = EditMode.CREATE_NODE;
+
+    private boolean locked;            // edición bloqueada mientras corre el algoritmo
+    private Consumer<Node> picker;     // si no es null, el próximo clic elige un nodo (origen/destino)
 
     private Node dragNode;      // nodo que se mueve (modo Mover)
     private Node edgeSource;    // nodo de inicio (modo Crear arista)
@@ -40,6 +45,25 @@ public class CanvasMouseHandler {
         canvas.hidePreview();
     }
 
+    /** Bloquea o habilita la edición del grafo. */
+    public void setLocked(boolean locked) {
+        this.locked = locked;
+        if (locked) {
+            dragNode = null;
+            edgeSource = null;
+            canvas.hidePreview();
+        }
+    }
+
+    /**
+     * El próximo clic sobre el área de dibujo llamará a picker con el nodo clicado
+     * (o null si se hizo clic en vacío). Con null se cancela una selección pendiente.
+     */
+    public void pickNode(Consumer<Node> picker) {
+        this.picker = picker;
+        canvas.setCursor(picker == null ? Cursor.DEFAULT : Cursor.HAND);
+    }
+
     private void onPressed(MouseEvent e) {
         if (e.getButton() != MouseButton.PRIMARY) {
             return;
@@ -47,6 +71,16 @@ public class CanvasMouseHandler {
         double x = e.getX();
         double y = e.getY();
         Node node = canvas.nodeAt(x, y);
+
+        if (picker != null) {
+            Consumer<Node> current = picker;
+            pickNode(null);
+            current.accept(node);
+            return;
+        }
+        if (locked) {
+            return;
+        }
 
         switch (mode) {
             case CREATE_NODE -> {
@@ -80,7 +114,7 @@ public class CanvasMouseHandler {
     }
 
     private void onDragged(MouseEvent e) {
-        if (e.getButton() != MouseButton.PRIMARY) {
+        if (e.getButton() != MouseButton.PRIMARY || locked) {
             return;
         }
         if (mode == EditMode.MOVE && dragNode != null) {
@@ -99,6 +133,9 @@ public class CanvasMouseHandler {
     }
 
     private void onReleased(MouseEvent e) {
+        if (locked) {
+            return;
+        }
         if (mode == EditMode.MOVE) {
             dragNode = null;
         } else if (mode == EditMode.CREATE_EDGE) {
@@ -142,7 +179,7 @@ public class CanvasMouseHandler {
 
     /** Doble clic sobre una arista: editar su peso. */
     private void onClicked(MouseEvent e) {
-        if (e.getButton() != MouseButton.PRIMARY || e.getClickCount() != 2) {
+        if (locked || e.getButton() != MouseButton.PRIMARY || e.getClickCount() != 2) {
             return;
         }
         if (canvas.nodeAt(e.getX(), e.getY()) != null) {
